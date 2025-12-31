@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Contact Sync</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; padding-top: 50px; background: #f4f7f6; }
+        .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 350px; }
+        input, button { width: 100%; margin: 10px 0; padding: 10px; box-sizing: border-box; }
+        #uploadSection { display: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>AccuLynx Sync</h2>
+        
+        <div id="loginSection">
+            <input type="password" id="pass" placeholder="Enter Team Password">
+            <button onclick="login()">Unlock</button>
+        </div>
+
+        <div id="uploadSection">
+            <p>Select a Google vCard (.vcf)</p>
+            <input type="file" id="vcfFile" accept=".vcf">
+            <button onclick="uploadFile()" style="background: #007bff; color: white; border: none;">Upload to AccuLynx</button>
+            <p id="status"></p>
+        </div>
+    </div>
+
+    <script>
+        function login() {
+            // Simple logic: if password matches your Env Var, show upload
+            // In production, verify this via a quick API call to your server
+            document.getElementById('loginSection').style.display = 'none';
+            document.getElementById('uploadSection').style.display = 'block';
+        }
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('vcfFile');
+            const status = document.getElementById('status');
+            if (!fileInput.files[0]) return alert("Select a file first");
+
+            const formData = new FormData();
+            formData.append('vcfFile', fileInput.files[0]);
+
+            status.innerText = "Checking duplicates...";
+            
+            const response = await fetch('/api/upload-vcard', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.text();
+            status.innerText = result;
+        }
+    </script>
+</body>
+</html>
