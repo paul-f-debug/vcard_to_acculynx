@@ -13,28 +13,29 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- THE FINAL AUTHENTICATION STRATEGY ---
+// --- THE ROBUST AUTHENTICATION FIX ---
 
 async function getAccessToken() {
     try {
-        // We move the credentials to a 'Basic' Auth header, which is the Gold Standard for OAuth2
-        const auth = Buffer.from(`${process.env.ACCULYNX_CLIENT_ID}:${process.env.ACCULYNX_CLIENT_SECRET}`).toString('base64');
+        // Using the formal object instead of a manual string
+        const params = new URLSearchParams();
+        params.append('grant_type', 'client_credentials');
+        params.append('client_id', process.env.ACCULYNX_CLIENT_ID);
+        params.append('client_secret', process.env.ACCULYNX_CLIENT_SECRET);
 
-        const response = await axios({
-            method: 'post',
-            url: 'https://identity.acculynx.com/connect/token',
-            // By putting ONLY the grant_type here, the server cannot misinterpret it
-            data: 'grant_type=client_credentials', 
-            headers: { 
-                'Authorization': `Basic ${auth}`, 
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Accept': 'application/json'
+        const response = await axios.post(
+            'https://identity.acculynx.com/connect/token',
+            params, // Axios handles the string conversion and headers automatically here
+            {
+                headers: { 
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
             }
-        });
+        );
 
         return response.data.access_token;
     } catch (err) {
-        // Logs exactly what the AccuLynx server says back to us
+        // This will now log the EXACT response from AccuLynx
         console.error('AUTH FAILED:', err.response ? err.response.data : err.message);
         throw err;
     }
@@ -42,7 +43,6 @@ async function getAccessToken() {
 
 // --- ROUTES ---
 
-// Team login route
 app.post('/api/login', (req, res) => {
     if (req.body.password === process.env.SHARED_APP_PASSWORD) {
         res.cookie('auth', 'true', { httpOnly: true });
@@ -51,7 +51,6 @@ app.post('/api/login', (req, res) => {
     res.status(401).send('Invalid Password');
 });
 
-// Main Sync Route
 app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
     try {
         const rawData = req.file.buffer.toString();
@@ -60,17 +59,14 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
 
         if (!email) return res.status(400).send("No email found in this vCard.");
 
-        // 1. Get the Access Token using the new Header method
         const token = await getAccessToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
-        // 2. Duplicate Check
         const search = await axios.get(`https://api.acculynx.com/v2/leads?email=${email}`, { headers });
         if (search.data.totalCount > 0) {
             return res.status(409).send("Duplicate: This contact is already in AccuLynx.");
         }
 
-        // 3. Create the Contact using the GUID from Render Environment
         await axios.post('https://api.acculynx.com/v2/contacts', {
             firstName: parsed.n[0].value[1] || "New",
             lastName: parsed.n[0].value[0] || "Contact",
