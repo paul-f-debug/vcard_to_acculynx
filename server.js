@@ -2,7 +2,6 @@ const express = require('express');
 const multer = require('multer');
 const vcard = require('vcard-parser');
 const axios = require('axios');
-const qs = require('qs'); // Required for formatting OAuth v2 requests
 const cookieParser = require('cookie-parser');
 const path = require('path');
 require('dotenv').config();
@@ -12,29 +11,28 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.json());
 app.use(cookieParser());
-// Serves index.html from the public folder
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- ACCULYNX V2 AUTHENTICATION ---
 
 async function getAccessToken() {
-    // This qs.stringify format is essential for the 'unsupported_grant_type' error
-    const data = qs.stringify({
-        grant_type: 'client_credentials',
-        client_id: process.env.ACCULYNX_CLIENT_ID,
-        client_secret: process.env.ACCULYNX_CLIENT_SECRET
-    });
+    // URLSearchParams is the standard way to handle 'application/x-www-form-urlencoded'
+    const params = new URLSearchParams();
+    params.append('grant_type', 'client_credentials');
+    params.append('client_id', process.env.ACCULYNX_CLIENT_ID);
+    params.append('client_secret', process.env.ACCULYNX_CLIENT_SECRET);
 
-    const config = {
-        method: 'post',
-        url: 'https://identity.acculynx.com/connect/token',
-        headers: { 
-            'Content-Type': 'application/x-www-form-urlencoded' 
-        },
-        data: data
-    };
+    const response = await axios.post(
+        'https://identity.acculynx.com/connect/token', 
+        params, 
+        {
+            headers: { 
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'
+            }
+        }
+    );
 
-    const response = await axios(config);
     return response.data.access_token;
 }
 
@@ -42,14 +40,13 @@ async function getAccessToken() {
 
 async function getGeneralContactTypeId(headers) {
     const response = await axios.get('https://api.acculynx.com/v2/contacts/types', { headers });
-    // Dynamically finds the ID for the 'General' contact category
+    // This finds the internal ID for 'General' in your specific AccuLynx account
     const type = response.data.find(t => t.name.toLowerCase().includes('general'));
     return type ? type.contactTypeId : null;
 }
 
 // --- ROUTES ---
 
-// Simple password verification for your team
 app.post('/api/login', (req, res) => {
     if (req.body.password === process.env.SHARED_APP_PASSWORD) {
         res.cookie('auth', 'true', { httpOnly: true });
@@ -58,7 +55,6 @@ app.post('/api/login', (req, res) => {
     res.status(401).send('Invalid Password');
 });
 
-// Main processing route for the vCard upload
 app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
     try {
         const rawData = req.file.buffer.toString();
@@ -67,21 +63,21 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
 
         if (!email) return res.status(400).send("No email found in this vCard.");
 
-        // 1. Authenticate with AccuLynx v2 Identity Server
+        // Step 1: Securely fetch the v2 Access Token
         const token = await getAccessToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
-        // 2. Search for existing leads to prevent duplicates
+        // Step 2: Check for existing leads by email to prevent duplicates
         const search = await axios.get(`https://api.acculynx.com/v2/leads?email=${email}`, { headers });
         if (search.data.totalCount > 0) {
             return res.status(409).send("Duplicate: This contact is already in AccuLynx.");
         }
 
-        // 3. Get the correct ID for "General Contact"
+        // Step 3: Identify the 'General' contact category ID
         const typeId = await getGeneralContactTypeId(headers);
         if (!typeId) return res.status(500).send("Could not find 'General' contact type in AccuLynx.");
 
-        // 4. Send the new contact data to AccuLynx
+        // Step 4: Create the new contact
         await axios.post('https://api.acculynx.com/v2/contacts', {
             firstName: parsed.n[0].value[1] || "New",
             lastName: parsed.n[0].value[0] || "Contact",
@@ -92,12 +88,11 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
         res.send("Successfully uploaded to AccuLynx!");
 
     } catch (err) {
-        // Log details to Render's 'Logs' tab for troubleshooting
+        // Detailed error logging for Render troubleshooting
         console.error('Sync Error Details:', err.response ? err.response.data : err.message);
         res.status(500).send("Sync failed. Please check your Render logs.");
     }
 });
 
-// Start the server on the port assigned by Render
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
