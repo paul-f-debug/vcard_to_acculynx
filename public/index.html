@@ -5,71 +5,72 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AccuLynx Contact Sync</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .container { background: white; padding: 2.5rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
-        h1 { color: #1a73e8; margin-bottom: 1.5rem; font-size: 24px; }
-        input[type="password"], input[type="file"] { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
-        button { width: 100%; padding: 12px; background-color: #1a73e8; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 16px; transition: background 0.3s; }
-        button:hover { background-color: #1557b0; }
-        button:disabled { background-color: #ccc; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f7f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: #ffffff; padding: 2.5rem; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 400px; }
+        h1 { color: #004a99; font-size: 22px; margin-bottom: 1.5rem; text-align: center; }
+        p { color: #555; font-size: 14px; text-align: center; line-height: 1.5; }
+        input[type="password"], input[type="file"] { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #d1d9e0; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
+        button { width: 100%; padding: 12px; background-color: #004a99; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
+        button:hover { background-color: #003366; }
         #uploadSection { display: none; }
-        .status { margin-top: 1.5rem; padding: 10px; border-radius: 6px; display: none; font-size: 14px; }
-        .error { background: #fde8e8; color: #c81e1e; display: block; }
-        .success { background: #def7ec; color: #03543f; display: block; }
+        .status { margin-top: 1.5rem; padding: 12px; border-radius: 8px; font-size: 13px; text-align: center; display: none; }
+        .error { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; display: block; }
+        .success { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; display: block; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>AccuLynx Sync</h1>
+    <h1>AccuLynx v2 Sync</h1>
 
     <div id="loginSection">
-        <p>Enter team password to access</p>
-        <input type="password" id="passwordInput" placeholder="Password">
-        <button onclick="checkPassword()">Unlock System</button>
+        <p>Enter the shared organization password to begin.</p>
+        <input type="password" id="passInput" placeholder="Organization Password">
+        <button onclick="login()">Unlock System</button>
     </div>
 
     <div id="uploadSection">
-        <p>Browse for a Google vCard (.vcf)</p>
-        <input type="file" id="vcfFile" accept=".vcf">
-        <button id="uploadBtn" onclick="handleUpload()">Upload to AccuLynx</button>
-        <div id="statusBox" class="status"></div>
+        <p>Choose a Google Contact vCard (.vcf) to upload to AccuLynx.</p>
+        <input type="file" id="fileInput" accept=".vcf">
+        <button id="syncBtn" onclick="syncContact()">Sync to AccuLynx</button>
+        <div id="statusMsg" class="status"></div>
     </div>
 </div>
 
 <script>
-    // Logic to switch from login to upload
-    async function checkPassword() {
-        const password = document.getElementById('passwordInput').value;
-        const res = await fetch('/api/login', {
+    async function login() {
+        const password = document.getElementById('passInput').value;
+        const response = await fetch('/api/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ password })
         });
 
-        if (res.ok) {
+        if (response.ok) {
             document.getElementById('loginSection').style.display = 'none';
             document.getElementById('uploadSection').style.display = 'block';
         } else {
-            alert('Incorrect Password');
+            alert('Incorrect password. Please try again.');
         }
     }
 
-    // Logic to send file to your Render backend
-    async function handleUpload() {
-        const fileInput = document.getElementById('vcfFile');
-        const statusBox = document.getElementById('statusBox');
-        const btn = document.getElementById('uploadBtn');
+    async function syncContact() {
+        const fileInput = document.getElementById('fileInput');
+        const statusMsg = document.getElementById('statusMsg');
+        const syncBtn = document.getElementById('syncBtn');
 
-        if (!fileInput.files[0]) return alert("Please select a .vcf file first.");
+        if (!fileInput.files[0]) {
+            alert('Please select a .vcf file first.');
+            return;
+        }
 
         const formData = new FormData();
         formData.append('vcfFile', fileInput.files[0]);
 
         // UI Feedback
-        btn.disabled = true;
-        btn.innerText = "Processing...";
-        statusBox.style.display = 'none';
+        syncBtn.disabled = true;
+        syncBtn.innerText = 'Syncing...';
+        statusMsg.style.display = 'none';
 
         try {
             const response = await fetch('/api/upload', {
@@ -77,19 +78,18 @@
                 body: formData
             });
 
-            const message = await response.text();
-            
-            statusBox.innerText = message;
-            statusBox.className = response.ok ? 'status success' : 'status error';
-            statusBox.style.display = 'block';
+            const text = await response.text();
+            statusMsg.innerText = text;
+            statusMsg.className = response.ok ? 'status success' : 'status error';
+            statusMsg.style.display = 'block';
 
         } catch (err) {
-            statusBox.innerText = "Network error. Check if server is running.";
-            statusBox.className = 'status error';
-            statusBox.style.display = 'block';
+            statusMsg.innerText = "Error: Could not connect to the server.";
+            statusMsg.className = 'status error';
+            statusMsg.style.display = 'block';
         } finally {
-            btn.disabled = false;
-            btn.innerText = "Upload to AccuLynx";
+            syncBtn.disabled = false;
+            syncBtn.innerText = 'Sync to AccuLynx';
         }
     }
 </script>
