@@ -11,42 +11,40 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.json());
 app.use(cookieParser());
+// Serves your index.html from the public folder
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- ACCULYNX V2 AUTHENTICATION ---
 
 async function getAccessToken() {
-    // URLSearchParams is the standard way to handle 'application/x-www-form-urlencoded'
-    const params = new URLSearchParams();
-    params.append('grant_type', 'client_credentials');
-    params.append('client_id', process.env.ACCULYNX_CLIENT_ID);
-    params.append('client_secret', process.env.ACCULYNX_CLIENT_SECRET);
+    try {
+        // Using URLSearchParams ensures the exact form-encoding AccuLynx requires
+        const params = new URLSearchParams();
+        params.append('grant_type', 'client_credentials');
+        params.append('client_id', process.env.ACCULYNX_CLIENT_ID);
+        params.append('client_secret', process.env.ACCULYNX_CLIENT_SECRET);
 
-    const response = await axios.post(
-        'https://identity.acculynx.com/connect/token', 
-        params, 
-        {
-            headers: { 
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Accept': 'application/json'
+        const response = await axios.post(
+            'https://identity.acculynx.com/connect/token', 
+            params.toString(), // Explicitly stringify to fix 'unsupported_grant_type'
+            {
+                headers: { 
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                }
             }
-        }
-    );
+        );
 
-    return response.data.access_token;
-}
-
-// --- ACCULYNX V2 HELPERS ---
-
-async function getGeneralContactTypeId(headers) {
-    const response = await axios.get('https://api.acculynx.com/v2/contacts/types', { headers });
-    // This finds the internal ID for 'General' in your specific AccuLynx account
-    const type = response.data.find(t => t.name.toLowerCase().includes('general'));
-    return type ? type.contactTypeId : null;
+        return response.data.access_token;
+    } catch (err) {
+        console.error('Authentication Failed:', err.response ? err.response.data : err.message);
+        throw err;
+    }
 }
 
 // --- ROUTES ---
 
+// Team login route
 app.post('/api/login', (req, res) => {
     if (req.body.password === process.env.SHARED_APP_PASSWORD) {
         res.cookie('auth', 'true', { httpOnly: true });
@@ -55,6 +53,7 @@ app.post('/api/login', (req, res) => {
     res.status(401).send('Invalid Password');
 });
 
+// Main Sync Route
 app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
     try {
         const rawData = req.file.buffer.toString();
@@ -63,36 +62,34 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
 
         if (!email) return res.status(400).send("No email found in this vCard.");
 
-        // Step 1: Securely fetch the v2 Access Token
+        // 1. Get the Access Token
         const token = await getAccessToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
-        // Step 2: Check for existing leads by email to prevent duplicates
+        // 2. Check for existing leads to avoid duplicates
         const search = await axios.get(`https://api.acculynx.com/v2/leads?email=${email}`, { headers });
         if (search.data.totalCount > 0) {
             return res.status(409).send("Duplicate: This contact is already in AccuLynx.");
         }
 
-        // Step 3: Identify the 'General' contact category ID
-        const typeId = await getGeneralContactTypeId(headers);
-        if (!typeId) return res.status(500).send("Could not find 'General' contact type in AccuLynx.");
-
-        // Step 4: Create the new contact
+        // 3. Create the Contact using the GUID from your Render Environment
+        // This uses the ACCULYNX_DEFAULT_CONTACT_TYPE_ID variable you just added
         await axios.post('https://api.acculynx.com/v2/contacts', {
             firstName: parsed.n[0].value[1] || "New",
             lastName: parsed.n[0].value[0] || "Contact",
-            typeId: typeId,
+            typeId: process.env.ACCULYNX_DEFAULT_CONTACT_TYPE_ID, 
             emails: [{ address: email, isPrimary: true }]
         }, { headers });
 
         res.send("Successfully uploaded to AccuLynx!");
 
     } catch (err) {
-        // Detailed error logging for Render troubleshooting
+        // Log deep details to Render logs if it fails
         console.error('Sync Error Details:', err.response ? err.response.data : err.message);
         res.status(500).send("Sync failed. Please check your Render logs.");
     }
 });
 
+// Start the server
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
