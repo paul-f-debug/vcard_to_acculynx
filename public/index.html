@@ -1,57 +1,98 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Contact Sync</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AccuLynx Contact Sync</title>
     <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; padding-top: 50px; background: #f4f7f6; }
-        .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 350px; }
-        input, button { width: 100%; margin: 10px 0; padding: 10px; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: white; padding: 2.5rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        h1 { color: #1a73e8; margin-bottom: 1.5rem; font-size: 24px; }
+        input[type="password"], input[type="file"] { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background-color: #1a73e8; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 16px; transition: background 0.3s; }
+        button:hover { background-color: #1557b0; }
+        button:disabled { background-color: #ccc; }
         #uploadSection { display: none; }
+        .status { margin-top: 1.5rem; padding: 10px; border-radius: 6px; display: none; font-size: 14px; }
+        .error { background: #fde8e8; color: #c81e1e; display: block; }
+        .success { background: #def7ec; color: #03543f; display: block; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h2>AccuLynx Sync</h2>
-        
-        <div id="loginSection">
-            <input type="password" id="pass" placeholder="Enter Team Password">
-            <button onclick="login()">Unlock</button>
-        </div>
 
-        <div id="uploadSection">
-            <p>Select a Google vCard (.vcf)</p>
-            <input type="file" id="vcfFile" accept=".vcf">
-            <button onclick="uploadFile()" style="background: #007bff; color: white; border: none;">Upload to AccuLynx</button>
-            <p id="status"></p>
-        </div>
+<div class="container">
+    <h1>AccuLynx Sync</h1>
+
+    <div id="loginSection">
+        <p>Enter team password to access</p>
+        <input type="password" id="passwordInput" placeholder="Password">
+        <button onclick="checkPassword()">Unlock System</button>
     </div>
 
-    <script>
-        function login() {
-            // Simple logic: if password matches your Env Var, show upload
-            // In production, verify this via a quick API call to your server
+    <div id="uploadSection">
+        <p>Browse for a Google vCard (.vcf)</p>
+        <input type="file" id="vcfFile" accept=".vcf">
+        <button id="uploadBtn" onclick="handleUpload()">Upload to AccuLynx</button>
+        <div id="statusBox" class="status"></div>
+    </div>
+</div>
+
+<script>
+    // Logic to switch from login to upload
+    async function checkPassword() {
+        const password = document.getElementById('passwordInput').value;
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+        });
+
+        if (res.ok) {
             document.getElementById('loginSection').style.display = 'none';
             document.getElementById('uploadSection').style.display = 'block';
+        } else {
+            alert('Incorrect Password');
         }
+    }
 
-        async function uploadFile() {
-            const fileInput = document.getElementById('vcfFile');
-            const status = document.getElementById('status');
-            if (!fileInput.files[0]) return alert("Select a file first");
+    // Logic to send file to your Render backend
+    async function handleUpload() {
+        const fileInput = document.getElementById('vcfFile');
+        const statusBox = document.getElementById('statusBox');
+        const btn = document.getElementById('uploadBtn');
 
-            const formData = new FormData();
-            formData.append('vcfFile', fileInput.files[0]);
+        if (!fileInput.files[0]) return alert("Please select a .vcf file first.");
 
-            status.innerText = "Checking duplicates...";
-            
-            const response = await fetch('/api/upload-vcard', {
+        const formData = new FormData();
+        formData.append('vcfFile', fileInput.files[0]);
+
+        // UI Feedback
+        btn.disabled = true;
+        btn.innerText = "Processing...";
+        statusBox.style.display = 'none';
+
+        try {
+            const response = await fetch('/api/upload', {
                 method: 'POST',
                 body: formData
             });
 
-            const result = await response.text();
-            status.innerText = result;
+            const message = await response.text();
+            
+            statusBox.innerText = message;
+            statusBox.className = response.ok ? 'status success' : 'status error';
+            statusBox.style.display = 'block';
+
+        } catch (err) {
+            statusBox.innerText = "Network error. Check if server is running.";
+            statusBox.className = 'status error';
+            statusBox.style.display = 'block';
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Upload to AccuLynx";
         }
-    </script>
+    }
+</script>
+
 </body>
 </html>
