@@ -17,7 +17,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 async function getAccessToken() {
     try {
-        // We manually build the string to ensure the exact format AccuLynx v2 requires
+        // Build the raw string manually to ensure exact format
         const rawBody = 'grant_type=client_credentials' +
                         '&client_id=' + process.env.ACCULYNX_CLIENT_ID +
                         '&client_secret=' + process.env.ACCULYNX_CLIENT_SECRET;
@@ -25,16 +25,15 @@ async function getAccessToken() {
         const response = await axios({
             method: 'post',
             url: 'https://identity.acculynx.com/connect/token',
-            data: rawBody, // Sending data as a raw string to bypass JSON formatting
+            data: rawBody, 
             headers: { 
-                'Content-Type': 'application/x-www-form-urlencoded', // Required by AccuLynx v2
+                'Content-Type': 'application/x-www-form-urlencoded',
                 'Accept': 'application/json'
             }
         });
 
         return response.data.access_token;
     } catch (err) {
-        // Detailed logging to help troubleshoot if login still fails
         console.error('AUTH FAILED:', err.response ? err.response.data : err.message);
         throw err;
     }
@@ -70,7 +69,7 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
             return res.status(409).send("Duplicate: This contact is already in AccuLynx.");
         }
 
-        // 3. Create the Contact using the GUID from your Render Environment
+        // 3. Create the Contact using the GUID from Render Environment
         await axios.post('https://api.acculynx.com/v2/contacts', {
             firstName: parsed.n[0].value[1] || "New",
             lastName: parsed.n[0].value[0] || "Contact",
@@ -81,12 +80,10 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
         res.send("Successfully uploaded to AccuLynx!");
 
     } catch (err) {
-        // Log deep details to Render logs if it fails
         console.error('SYNC ERROR DETAILS:', err.response ? err.response.data : err.message);
         res.status(500).send("Sync failed. Please check your Render logs.");
     }
 });
 
-// Start the server on Render's assigned port
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
