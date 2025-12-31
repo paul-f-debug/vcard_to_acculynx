@@ -15,7 +15,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- ROUTES ---
 
-// Team login route
 app.post('/api/login', (req, res) => {
     if (req.body.password === process.env.SHARED_APP_PASSWORD) {
         res.cookie('auth', 'true', { httpOnly: true });
@@ -24,32 +23,35 @@ app.post('/api/login', (req, res) => {
     res.status(401).send('Invalid Password');
 });
 
-// Main Sync Route
 app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
     try {
         const rawData = req.file.buffer.toString();
         const parsed = vcard.parse(rawData);
         
-        // Extracting name and email from vCard
-        const firstName = parsed.n[0].value[1] || "New";
-        const lastName = parsed.n[0].value[0] || "Contact";
+        // Extracting Data
+        const firstName = parsed.n ? parsed.n[0].value[1] : "New";
+        const lastName = parsed.n ? parsed.n[0].value[0] : "Contact";
         const email = parsed.email ? parsed.email[0].value : null;
 
         if (!email) return res.status(400).send("No email found in this vCard.");
 
-        // Using the API Key directly in the headers
+        // UPDATED HEADERS: Using the API Key correctly
         const headers = { 
             'Authorization': `Bearer ${process.env.ACCULYNX_API_KEY}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
         };
 
-        // 1. Duplicate Check: Search for existing leads by email
+        // 1. Duplicate Check
+        console.log(`Checking for existing email: ${email}`);
         const search = await axios.get(`https://api.acculynx.com/v2/leads?email=${email}`, { headers });
-        if (search.data.totalCount > 0) {
+        
+        if (search.data && search.data.totalCount > 0) {
             return res.status(409).send("Duplicate: This contact is already in AccuLynx.");
         }
 
-        // 2. Create the Contact using your saved GUID
+        // 2. Create Contact using your GUID
+        console.log("Creating contact in AccuLynx...");
         await axios.post('https://api.acculynx.com/v2/contacts', {
             firstName: firstName,
             lastName: lastName,
@@ -60,9 +62,10 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
         res.send("Successfully uploaded to AccuLynx!");
 
     } catch (err) {
-        // Detailed error logging for Render troubleshooting
-        console.error('Sync Error Details:', err.response ? err.response.data : err.message);
-        res.status(500).send("Sync failed. Please check your Render logs.");
+        // This will now capture the specific reason AccuLynx is saying "no"
+        const errorData = err.response ? JSON.stringify(err.response.data) : err.message;
+        console.error('Sync Error Details:', errorData);
+        res.status(500).send(`Sync failed: ${errorData}`);
     }
 });
 
