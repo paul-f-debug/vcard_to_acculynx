@@ -13,20 +13,20 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- THE CRITICAL AUTH FIX ---
+// --- THE FINAL AUTHENTICATION STRATEGY ---
 
 async function getAccessToken() {
     try {
-        // Build the raw string manually to ensure exact format
-        const rawBody = 'grant_type=client_credentials' +
-                        '&client_id=' + process.env.ACCULYNX_CLIENT_ID +
-                        '&client_secret=' + process.env.ACCULYNX_CLIENT_SECRET;
+        // We move the credentials to a 'Basic' Auth header, which is the Gold Standard for OAuth2
+        const auth = Buffer.from(`${process.env.ACCULYNX_CLIENT_ID}:${process.env.ACCULYNX_CLIENT_SECRET}`).toString('base64');
 
         const response = await axios({
             method: 'post',
             url: 'https://identity.acculynx.com/connect/token',
-            data: rawBody, 
+            // By putting ONLY the grant_type here, the server cannot misinterpret it
+            data: 'grant_type=client_credentials', 
             headers: { 
+                'Authorization': `Basic ${auth}`, 
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Accept': 'application/json'
             }
@@ -34,6 +34,7 @@ async function getAccessToken() {
 
         return response.data.access_token;
     } catch (err) {
+        // Logs exactly what the AccuLynx server says back to us
         console.error('AUTH FAILED:', err.response ? err.response.data : err.message);
         throw err;
     }
@@ -59,7 +60,7 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
 
         if (!email) return res.status(400).send("No email found in this vCard.");
 
-        // 1. Get the Access Token
+        // 1. Get the Access Token using the new Header method
         const token = await getAccessToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
