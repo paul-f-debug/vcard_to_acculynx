@@ -17,21 +17,24 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 async function getAccessToken() {
     try {
-        // Constructing raw string to guarantee exact format for AccuLynx v2
-        const rawBody = `grant_type=client_credentials&client_id=${process.env.ACCULYNX_CLIENT_ID}&client_secret=${process.env.ACCULYNX_CLIENT_SECRET}`;
+        // We manually build the string to ensure the exact format AccuLynx v2 requires
+        const rawBody = 'grant_type=client_credentials' +
+                        '&client_id=' + process.env.ACCULYNX_CLIENT_ID +
+                        '&client_secret=' + process.env.ACCULYNX_CLIENT_SECRET;
 
         const response = await axios({
             method: 'post',
             url: 'https://identity.acculynx.com/connect/token',
-            data: rawBody,
+            data: rawBody, // Sending data as a raw string to bypass JSON formatting
             headers: { 
-                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Type': 'application/x-www-form-urlencoded', // Required by AccuLynx v2
                 'Accept': 'application/json'
             }
         });
 
         return response.data.access_token;
     } catch (err) {
+        // Detailed logging to help troubleshoot if login still fails
         console.error('AUTH FAILED:', err.response ? err.response.data : err.message);
         throw err;
     }
@@ -39,6 +42,7 @@ async function getAccessToken() {
 
 // --- ROUTES ---
 
+// Team login route
 app.post('/api/login', (req, res) => {
     if (req.body.password === process.env.SHARED_APP_PASSWORD) {
         res.cookie('auth', 'true', { httpOnly: true });
@@ -47,6 +51,7 @@ app.post('/api/login', (req, res) => {
     res.status(401).send('Invalid Password');
 });
 
+// Main Sync Route
 app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
     try {
         const rawData = req.file.buffer.toString();
@@ -55,7 +60,7 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
 
         if (!email) return res.status(400).send("No email found in this vCard.");
 
-        // 1. Get Access Token
+        // 1. Get the Access Token
         const token = await getAccessToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
@@ -65,7 +70,7 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
             return res.status(409).send("Duplicate: This contact is already in AccuLynx.");
         }
 
-        // 3. Create Contact using the GUID
+        // 3. Create the Contact using the GUID from your Render Environment
         await axios.post('https://api.acculynx.com/v2/contacts', {
             firstName: parsed.n[0].value[1] || "New",
             lastName: parsed.n[0].value[0] || "Contact",
@@ -76,10 +81,12 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
         res.send("Successfully uploaded to AccuLynx!");
 
     } catch (err) {
+        // Log deep details to Render logs if it fails
         console.error('SYNC ERROR DETAILS:', err.response ? err.response.data : err.message);
-        res.status(500).send("Sync failed. Check Render logs.");
+        res.status(500).send("Sync failed. Please check your Render logs.");
     }
 });
 
+// Start the server on Render's assigned port
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
