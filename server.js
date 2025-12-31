@@ -17,7 +17,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 async function getAccessToken() {
     try {
-        // Hard-coding the string format to guarantee no hidden formatting errors
+        // Constructing raw string to guarantee exact format for AccuLynx v2
         const rawBody = `grant_type=client_credentials&client_id=${process.env.ACCULYNX_CLIENT_ID}&client_secret=${process.env.ACCULYNX_CLIENT_SECRET}`;
 
         const response = await axios({
@@ -76,7 +76,7 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
         res.send("Successfully uploaded to AccuLynx!");
 
     } catch (err) {
-        console.error('SYNC ERROR:', err.response ? err.response.data : err.message);
+        console.error('SYNC ERROR DETAILS:', err.response ? err.response.data : err.message);
         res.status(500).send("Sync failed. Check Render logs.");
     }
 });
