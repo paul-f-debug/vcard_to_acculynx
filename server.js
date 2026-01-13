@@ -13,9 +13,8 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 1. STABLE LOGIN SYSTEM
+// 1. STABLE PASSWORD SYSTEM
 app.post('/api/login', (req, res) => {
-    // Hardcoded for testing stability as requested
     if (req.body.password === "3m") {
         res.cookie('auth', 'true', { httpOnly: true });
         return res.sendStatus(200);
@@ -23,7 +22,7 @@ app.post('/api/login', (req, res) => {
     res.status(401).send('Incorrect password.');
 });
 
-// 2. ENHANCED VCARD SYNC LOGIC
+// 2. GREEDY DATA SYNC LOGIC
 app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
     try {
         const rawData = req.file.buffer.toString();
@@ -34,11 +33,11 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
         const lastName = nameData[0] || "";
         const firstName = nameData[1] || "New Contact";
         
-        // Capture extra info like Company and Notes
+        // Google often puts extra info in 'Note' or 'Org' (Organization)
         const company = parsed.org ? parsed.org[0].value : "";
         const googleNotes = parsed.note ? parsed.note[0].value : "";
         
-        // Capture all emails and phone numbers
+        // Loop through all emails and phone numbers
         const emailAddresses = (parsed.email || []).map((e, i) => ({
             address: e.value,
             isPrimary: i === 0
@@ -59,31 +58,30 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
             'Accept': 'application/json'
         };
 
-        // --- ACCULYNX PAYLOAD ---
+        // --- ACCULYNX V2 PAYLOAD ---
         const contactData = {
             firstName: firstName,
             lastName: lastName,
             companyName: company,
-            contactTypeIds: [contactTypeId], // Required list format
+            contactTypeIds: [contactTypeId], // FIX: Plural array format required
             emailAddresses: emailAddresses,
             phoneNumbers: phoneNumbers,
-            notes: googleNotes // Syncs Google "Notes" field directly
+            notes: googleNotes // Syncs the Google "Notes" field directly
         };
 
-        // Final POST to AccuLynx v2
+        // POST request to the official v2 Contacts endpoint
         const response = await axios.post('https://api.acculynx.com/api/v2/contacts', contactData, { headers });
 
         res.send(`Success! Contact created: ${firstName} ${lastName}`);
 
     } catch (err) {
-        // Detailed error reporting for troubleshooting
         let detailedError = "Sync Failed.";
         if (err.response) {
             detailedError = `AccuLynx Error (${err.response.status}): ${JSON.stringify(err.response.data)}`;
         } else {
             detailedError = err.message;
         }
-        console.error('DIAGNOSTIC LOG:', detailedError);
+        console.error('SERVER LOG:', detailedError);
         res.status(500).send(`Sync Failed. Diagnostic Info: ${detailedError}`);
     }
 });
