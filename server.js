@@ -13,8 +13,9 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Stable login check
+// 1. STABLE LOGIN SYSTEM
 app.post('/api/login', (req, res) => {
+    // Hardcoded for testing stability as requested
     if (req.body.password === "3m") {
         res.cookie('auth', 'true', { httpOnly: true });
         return res.sendStatus(200);
@@ -22,23 +23,33 @@ app.post('/api/login', (req, res) => {
     res.status(401).send('Incorrect password.');
 });
 
+// 2. ENHANCED VCARD SYNC LOGIC
 app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
     try {
         const rawData = req.file.buffer.toString();
         const parsed = vcard.parse(rawData);
         
-        // 1. EXTRACT CORE DATA
+        // --- DATA EXTRACTION ---
         const nameData = parsed.n ? parsed.n[0].value : [];
         const lastName = nameData[0] || "";
         const firstName = nameData[1] || "New Contact";
         
-        // Extract company/organization
+        // Capture extra info like Company and Notes
         const company = parsed.org ? parsed.org[0].value : "";
+        const googleNotes = parsed.note ? parsed.note[0].value : "";
         
-        // Extract multiple emails and phones if they exist
-        const emails = (parsed.email || []).map((e, i) => ({ address: e.value, isPrimary: i === 0 }));
-        const phones = (parsed.tel || []).map((p, i) => ({ number: p.value, isPrimary: i === 0 }));
+        // Capture all emails and phone numbers
+        const emailAddresses = (parsed.email || []).map((e, i) => ({
+            address: e.value,
+            isPrimary: i === 0
+        }));
 
+        const phoneNumbers = (parsed.tel || []).map((p, i) => ({
+            number: p.value,
+            isPrimary: i === 0
+        }));
+
+        // --- AUTH & CONFIG ---
         const apiKey = process.env.ACCULYNX_API_KEY.trim();
         const contactTypeId = process.env.ACCULYNX_DEFAULT_CONTACT_TYPE_ID.trim();
 
@@ -48,21 +59,31 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
             'Accept': 'application/json'
         };
 
-        // 2. CONSTRUCT PAYLOAD
+        // --- ACCULYNX PAYLOAD ---
         const contactData = {
             firstName: firstName,
             lastName: lastName,
             companyName: company,
             contactTypeIds: [contactTypeId], // Required list format
-            emailAddresses: emails,
-            phoneNumbers: phones
+            emailAddresses: emailAddresses,
+            phoneNumbers: phoneNumbers,
+            notes: googleNotes // Syncs Google "Notes" field directly
         };
 
+        // Final POST to AccuLynx v2
         const response = await axios.post('https://api.acculynx.com/api/v2/contacts', contactData, { headers });
+
         res.send(`Success! Contact created: ${firstName} ${lastName}`);
 
     } catch (err) {
-        let detailedError = err.response ? JSON.stringify(err.response.data) : err.message;
+        // Detailed error reporting for troubleshooting
+        let detailedError = "Sync Failed.";
+        if (err.response) {
+            detailedError = `AccuLynx Error (${err.response.status}): ${JSON.stringify(err.response.data)}`;
+        } else {
+            detailedError = err.message;
+        }
+        console.error('DIAGNOSTIC LOG:', detailedError);
         res.status(500).send(`Sync Failed. Diagnostic Info: ${detailedError}`);
     }
 });
