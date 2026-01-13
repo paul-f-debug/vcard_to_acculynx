@@ -13,6 +13,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Hardcoded for stability
 app.post('/api/login', (req, res) => {
     if (req.body.password === "3m") {
         res.cookie('auth', 'true', { httpOnly: true });
@@ -31,8 +32,12 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
         const firstName = nameData[1] || "New";
         const email = parsed.email ? parsed.email[0].value : null;
 
+        // Clean API Key and verify endpoint
+        const apiKey = process.env.ACCULYNX_API_KEY.trim();
+        const contactTypeId = process.env.ACCULYNX_DEFAULT_CONTACT_TYPE_ID.trim();
+
         const headers = { 
-            'Authorization': `Bearer ${process.env.ACCULYNX_API_KEY.trim()}`,
+            'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
             'Accept': 'application/json'
         };
@@ -40,29 +45,23 @@ app.post('/api/upload', upload.single('vcfFile'), async (req, res) => {
         const contactData = {
             firstName: firstName,
             lastName: lastName,
-            typeId: process.env.ACCULYNX_DEFAULT_CONTACT_TYPE_ID, 
+            typeId: contactTypeId,
             emails: email ? [{ address: email, isPrimary: true }] : []
         };
 
-        const response = await axios.post('https://api.acculynx.com/v2/contacts', contactData, { headers });
+        // UPDATED URL: Using the explicit v2 path
+        const response = await axios.post('https://api.acculynx.com/api/v2/contacts', contactData, { headers });
+
         res.send(`Success! Contact created with ID: ${response.data.contactId}`);
 
     } catch (err) {
-        // --- NEW DIAGNOSTIC BLOCK ---
-        // This captures the exact reason AccuLynx rejected the sync
         let detailedError = "Unknown Error";
-        
         if (err.response) {
-            // The server responded with a status code outside the 2xx range
+            // Detailed diagnostic to catch why the 404 is happening
             detailedError = `AccuLynx Error (${err.response.status}): ${JSON.stringify(err.response.data)}`;
-        } else if (err.request) {
-            // The request was made but no response was received
-            detailedError = "No response from AccuLynx. Check your API Key and Internet.";
         } else {
             detailedError = err.message;
         }
-
-        console.error('DIAGNOSTIC LOG:', detailedError);
         res.status(500).send(`Sync Failed. Diagnostic Info: ${detailedError}`);
     }
 });
